@@ -11,14 +11,16 @@
 #define MISSING_POSITION NULL
 
 #define BLANK_SQUARE '-'
-#define VISITED_BLANK_SQUARE '.'
+#define VISITED_BLANK_SQUARE '$'
 #define TARGET_BLANK_SQUARE '+'
-#define VISITED_TARGET_BLANK_SQUARE ','
-#define SQUARE_WITH_WALL '#'
-#define SQUARE_WITH_PLAYER '@'
-#define VISITED_SQUARE_WITH_PLAYER '!'
-#define TARGET_SQUARE_WITH_PLAYER '*'
-#define VISITED_TARGET_SQUARE_WITH_PLAYER '^'
+#define VISITED_TARGET_BLANK_SQUARE '&'
+#define WALL_SQUARE '#'
+#define PLAYER_SQUARE '@'
+#define VISITED_PLAYER_SQUARE '!'
+#define TARGET_PLAYER_SQUARE '*'
+#define VISITED_TARGET_PLAYER_SQUARE '^'
+
+#define UNDO_COMMAND '0'
 
 typedef struct
 {
@@ -60,6 +62,14 @@ void addToRow(Row *row, char square)
     row->size++;
 }
 
+void printRow(Row *row)
+{
+    for (int i = 0; i < row->size; i++)
+    {
+        printf("%c", row[i]);
+    }
+}
+
 void disposeRow(Row *row)
 {
     free(row->squares);
@@ -97,6 +107,15 @@ void addToBoard(Board *board, Row *row)
     board->size++;
 }
 
+void printBoard(Board *board)
+{
+    for (int i = 0; i < board->size; i++)
+    {
+        printRow(board->rows[i]);
+        printf("\n");
+    }
+}
+
 void disposeBoard(Board *board)
 {
     for (int i = 0; i < b->size; i++)
@@ -122,6 +141,107 @@ Position *getNewPosition(int row, int col)
     return newPos;
 }
 
+void disposePosition(Position *pos)
+{
+    free(pos);
+}
+
+typedef struct
+{
+    Board *board;
+    Position *playerPos;
+    Position *chestsPos[NUM_OF_CHESTS];
+} Game;
+
+// comment on this
+typedef struct
+{
+    int chestNum;
+    Position *prevChestPos;
+    Position *prevPlayerPos;
+} Move;
+
+Move *getNewMove(int chestNum, Position *prevChestPos, Position *prevPlayerPos)
+{
+    Move *newMove = malloc(sizeof(Move));
+    assert(newMove != NULL);
+    newMove->chestNum = chestNum;
+    newMove->prevChestPos = prevChestPos;
+    newMove->prevPlayerPos = prevPlayerPos;
+    return newMove;
+}
+
+void disposeMove(Move *move)
+{
+    disposePosition(move->prevChestPos);
+    disposePosition(move->prevPlayerPos);
+    free(move);
+}
+
+typedef struct
+{
+    Move *move;
+    MoveNode *next;
+} MoveNode;
+
+MoveNode *getNewMoveNode(Move *move, MoveNode *next)
+{
+    MoveNode *newMoveNode = malloc(sizeof(MoveNode));
+    assert(newMoveNode != NULL);
+    newMoveNode->move = move;
+    newMoveNode->next = next;
+}
+
+void disposeMoveNode(MoveNode *node)
+{
+    disposeMove(node->move);
+    free(node);
+}
+
+typedef struct
+{
+    MoveNode *top;
+} MoveStack;
+
+void initMoveStack(MoveStack *stack)
+{
+    stack->top = NULL;
+}
+
+bool isMoveStackEmpty(MoveStack *stack)
+{
+    return stack->top == NULL;
+}
+
+Move *top(MoveStack *stack)
+{
+    return stack->top->move;
+}
+
+Move *pop(MoveStack *stack)
+{
+    Move *topMove = top(stack);
+    MoveNode *topNode = stack->top;
+    stack->top = topNode->next;
+    free(topNode);
+    return topMove;
+}
+
+void push(MoveStack *stack, Move *move)
+{
+    MoveNode *node = getNewMoveNode(move, stack->top);
+    stack->top = node;
+}
+
+void clearMoveStack(MoveStack *stack)
+{
+    while (!isPositionStackEmpty(stack))
+    {
+        MoveNode *node = pop(stack);
+        disposeMoveNode(node);
+    }
+}
+
 typedef struct
 {
     Position *pos;
@@ -137,49 +257,10 @@ PositionNode *getNewPositionNode(Position *pos, PositionNode *next)
     return newNode;
 }
 
-typedef struct
+void disposePositionNode(PositionNode *node)
 {
-    PositionNode *top;
-} PositionStack;
-
-void initPositionStack(PositionStack *stack)
-{
-    stack->top = NULL;
-}
-
-bool isPositionStackEmpty(PositionStack *stack)
-{
-    return stack->top == NULL;
-}
-
-Position *top(PositionStack *stack)
-{
-    return stack->top->pos;
-}
-
-Position *pop(PositionStack *stack)
-{
-    Position *topPos = top(stack);
-    PositionNode *topNode = stack->top;
-    stack->top = topNode->next;
-    free(topNode);
-    return topPos;
-}
-
-void push(PositionStack *stack, Position *pos)
-{
-    PositionNode *node = getNewPositionNode(pos, top(stack));
-    stack->top = node;
-}
-
-void clearPositionStack(PositionStack *stack)
-{
-    while (!isPositionStackEmpty(stack))
-    {
-        PositionNode *node = pop(stack);
-        free(node->pos);
-        free(node);
-    }
+    disposePosition(node->pos);
+    free(node);
 }
 
 typedef struct
@@ -236,8 +317,73 @@ void clearPositionQueue(PositionQueue *queue)
     while (!isPositionQueueEmpty(queue))
     {
         PositionNode *node = popFront(queue);
-        free(node->pos);
-        free(node);
+        disposePositionNode(node);
+    }
+}
+
+bool isPlayerSquare(char square)
+{
+    return square == PLAYER_SQUARE || square == TARGET_PLAYER_SQUARE;
+}
+
+bool isTargetChestSquare(char square)
+{
+    return 'A' <= square && square <= 'Z';
+}
+
+bool isNonTargetChestSquare(char square)
+{
+    return 'a' <= square && square <= 'z';
+}
+
+bool isChestSquare(char square)
+{
+    return isNonTargetChestSquare(square) || isTargetChestSquare(square);
+}
+
+int getChestNum(char chestName)
+{
+    if (isTargetChestSquare(chestName))
+    {
+        return chestName - 'A';
+    }
+    else
+    {
+        return chestName - 'a';
+    }
+}
+
+void findPlayerPosition(Board *board, Position *playerPos)
+{
+    bool isFound = false;
+    for (int i = 0; i < board->size && !isFound; i++)
+    {
+        for (int j = 0; j < board->rows[i]->size && !isFound; j++)
+        {
+            char square = board->rows[i]->squares[j];
+            if (isPlayerSquare(square))
+            {
+                isFound = true;
+                playerPos->row = i;
+                playerPos->col = j;
+            }
+        }
+    }
+}
+
+void findChestsPositions(Board *board, Position *chestsPos[])
+{
+    for (int i = 0; i < board->size; i++)
+    {
+        for (int j = 0; j < board->rows[i]->size; j++)
+        {
+            char square = board->rows[i]->squares[j];
+            if (isChestSquare(square))
+            {
+                int chestNum = getChestNum(square);
+                chestsPos[chestNum] = getNewPosition(i, j);
+            }
+        }
     }
 }
 
@@ -269,7 +415,7 @@ void loadLineToRow(Row *row, int c)
     } while (c != '\n');
 }
 
-void readInitBoardState(Board *board)
+void readInitialBoardState(Board *board)
 {
     int c = getchar();
     while (c != '\n')
@@ -281,38 +427,29 @@ void readInitBoardState(Board *board)
     }
 }
 
-bool isPlayerSquare(char square)
+void executeUndoCommand(Game *sokoban, MoveStack *stack)
 {
-    return square == PLAYER_SQUARE || square == TARGET_PLAYER_SQUARE;
+    // TODO
 }
 
-void findPlayerPosition(Board *board, Position *playerPos)
+void executePushCommand(Game *sokoban, PositionQueue *queue, MoveStack *stack)
 {
-    bool isFound = false;
-    for (int i = 0; i < board->size && !isFound; i++)
-    {
-        for (int j = 0; j < board->rows[i]->size && !isFound; j++)
-        {
-            char square = board->rows[i]->squares[j];
-            if (isPlayerSquare(square))
-            {
-                isFound = true;
-                playerPos->row = i;
-                playerPos->col = j;
-            }
-        }
-    }
+    // TODO
 }
 
-void findChestsPositions(Board* board, Position* chestsPos[]){
-    for (int i = 0; i < board->size; i++)
+void executeCommands(Game *sokoban)
+{
+    int c = getchar();
+    while (c != '.')
     {
-        for (int j = 0; j < board->rows[i]->size; j++)
+        if (c == UNDO_COMMAND)
         {
-            if(isChestPosition(board, i, j)){
-                int chestNum = getChestNum
-            }
+            executeUndoCommand(board, chestsPos, playerPos);
         }
+        else
+        {
+        }
+        c = getchar();
     }
 }
 
@@ -320,13 +457,21 @@ int main()
 {
     Board board;
     initBoard(&board);
-    readInitBoardState(&board);
+    readInitialBoardState(&board);
 
     Position playerPos;
-    findPlayerPosition(board, &playerPos);
+    findPlayerPosition(&board, &playerPos);
 
     Position *chestsPos[NUM_OF_CHESTS];
     initChestsPositions(chestsPos);
+    findChestsPositions(&board, chestsPos);
+
+    Game sokoban;
+    sokoban.board = &board;
+    sokoban.playerPos = &playerPos;
+    sokoban.chestsPos = chestsPos;
+
+    executeCommands(&sokoban);
 
     disposeBoard(&board);
     disposeChestsPositions(chestsPos);
