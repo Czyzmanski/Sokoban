@@ -146,6 +146,22 @@ Position *getNewPosition(int row, int col)
     return newPos;
 }
 
+bool arePositionsEqual(Position *pos1, Position *pos2)
+{
+    if (pos1 == NULL && pos2 == NULL)
+    {
+        return true;
+    }
+    else if (pos1 == NULL || pos2 == NULL)
+    {
+        return false;
+    }
+    else
+    {
+        return pos1->row == pos2->row && pos1->col == pos2->col;
+    }
+}
+
 typedef struct
 {
     int chestNum;
@@ -345,6 +361,11 @@ bool isChestSquare(char sq)
 bool isBlankSquare(char sq)
 {
     return sq == BLANK_SQUARE || sq == TARGET_BLANK_SQUARE;
+}
+
+bool isPathSquare(char sq)
+{
+    return isBlankSquare(sq) || isPlayerSquare(sq);
 }
 
 int getChestNum(char chestName)
@@ -560,6 +581,59 @@ Position *getTargetPosition(Game *game, PushCommand *pushComm)
     return getNewPosition(targetRow, targetCol);
 }
 
+void markSquareVisited(char *sq)
+{
+    if (*sq == BLANK_SQUARE)
+    {
+        *sq = VISITED_BLANK_SQUARE;
+    }
+    else if (*sq == TARGET_BLANK_SQUARE)
+    {
+        *sq = VISITED_TARGET_BLANK_SQUARE;
+    }
+    else if (*sq == PLAYER_SQUARE)
+    {
+        *sq = VISITED_PLAYER_SQUARE;
+    }
+    else if (*sq == TARGET_PLAYER_SQUARE)
+    {
+        *sq = VISITED_TARGET_PLAYER_SQUARE;
+    }
+}
+
+void processPosition(Board *board, Position *pos, PositionQueue *queue)
+{
+    if (isPositionInRange(pos))
+    {
+        Row *posRow = board->rows[pos->row];
+        char *posSquare = &(posRow->squares[pos->col]);
+        if (isPathSquare(*posSquare))
+        {
+            markSquareVisited(posSquare);
+            pushBack(queue, pos);
+        }
+    }
+    else
+    {
+        free(pos);
+    }
+}
+
+void addNeighbors(Board *board, Position *pos, PositionQueue *queue)
+{
+    Position *upNeighbor = getNewPosition(pos->row - 1, pos->col);
+    processPosition(board, upNeighbor, queue);
+
+    Position *rightNeighbor = getNewPosition(pos->row, pos->col + 1);
+    processPosition(board, rightNeighbor, queue);
+
+    Position *downNeighbor = getNewPosition(pos->row + 1, pos->col);
+    processPosition(board, downNeighbor, queue);
+
+    Position *leftNeighbor = getNewPosition(pos->row, pos->col - 1);
+    processPosition(board, leftNeighbor, queue);
+}
+
 bool isPath(Game *game, Position *targetPlayerPos)
 {
     PositionQueue queue;
@@ -568,7 +642,28 @@ bool isPath(Game *game, Position *targetPlayerPos)
     Position *playerPos = game->playerPos;
     Position *copiedPlayerPos = getNewPosition(playerPos->row, playerPos->col);
 
+    bool isPathFound = false;
+    processPosition(game->board, copiedPlayerPos, &queue);
+
+    while (!isPositionQueueEmpty(queue) && !isPathFound)
+    {
+        Position *pos = popFront(queue);
+        if (arePositionsEqual(pos, targetPlayerPos))
+        {
+            isPathFound = true;
+        }
+        else
+        {
+            addNeighbors(game->board, pos, &queue);
+        }
+        free(pos);
+    }
+
     clearPositionQueue(&queue);
+
+    // unmark
+
+    return isPathFound;
 }
 
 bool isApproachPossible(Game *game, PushCommand *pushComm)
