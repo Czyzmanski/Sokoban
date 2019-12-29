@@ -5,10 +5,9 @@
 #include <assert.h>
 
 #define GROWTH_FACTOR 2
-#define INITIAL_CAPACITY 4
+#define INITIAL_CAPACITY 1
 
 #define NUM_OF_CHESTS 26
-#define MISSING_POSITION NULL
 
 #define BLANK_SQUARE '-'
 #define VISITED_BLANK_SQUARE '$'
@@ -46,10 +45,10 @@ void initRow(Row *row)
 
 Row *getNewRow()
 {
-    Row *newRow = malloc(sizeof(Row));
-    assert(newRow != NULL);
-    initRow(newRow);
-    return newRow;
+    Row *row = malloc(sizeof(Row));
+    assert(row != NULL);
+    initRow(row);
+    return row;
 }
 
 void reallocRow(Row *row)
@@ -59,13 +58,13 @@ void reallocRow(Row *row)
     assert(row->squares != NULL);
 }
 
-void addToRow(Row *row, char square)
+void addToRow(Row *row, char sqr)
 {
     if (row->size == row->capacity)
     {
         reallocRow(row);
     }
-    row->squares[row->size] = square;
+    row->squares[row->size] = sqr;
     row->size++;
 }
 
@@ -145,11 +144,11 @@ typedef struct Position Position;
 
 Position *getNewPosition(int row, int col)
 {
-    Position *newPos = malloc(sizeof(Position));
-    assert(newPos != NULL);
-    newPos->row = row;
-    newPos->col = col;
-    return newPos;
+    Position *pos = malloc(sizeof(Position));
+    assert(pos != NULL);
+    pos->row = row;
+    pos->col = col;
+    return pos;
 }
 
 bool arePositionsEqual(Position *pos1, Position *pos2)
@@ -196,11 +195,11 @@ typedef struct Move Move;
 
 Move *getNewMove(int chestNum, Position *prevPlayerPos)
 {
-    Move *newMove = malloc(sizeof(Move));
-    assert(newMove != NULL);
-    newMove->chestNum = chestNum;
-    newMove->prevPlayerPos = prevPlayerPos;
-    return newMove;
+    Move *move = malloc(sizeof(Move));
+    assert(move != NULL);
+    move->chestNum = chestNum;
+    move->prevPlayerPos = prevPlayerPos;
+    return move;
 }
 
 void disposeMove(Move *move)
@@ -219,10 +218,11 @@ typedef struct MoveNode MoveNode;
 
 MoveNode *getNewMoveNode(Move *move, MoveNode *next)
 {
-    MoveNode *newMoveNode = malloc(sizeof(MoveNode));
-    assert(newMoveNode != NULL);
-    newMoveNode->move = move;
-    newMoveNode->next = next;
+    MoveNode *node = malloc(sizeof(MoveNode));
+    assert(node != NULL);
+    node->move = move;
+    node->next = next;
+    return node;
 }
 
 void disposeMoveNode(MoveNode *node)
@@ -360,29 +360,38 @@ void clearPositionQueue(PositionQueue *queue)
     }
 }
 
-bool isPlayerSquare(char sq)
+bool isPlayerSquare(char sqr)
 {
-    return sq == PLAYER_SQUARE || sq == TARGET_PLAYER_SQUARE;
+    return sqr == PLAYER_SQUARE || sqr == TARGET_PLAYER_SQUARE;
 }
 
-bool isTargetChestSquare(char sq)
+bool isTargetChestSquare(char sqr)
 {
-    return 'A' <= sq && sq <= 'Z';
+    return 'A' <= sqr && sqr <= 'Z';
 }
 
-bool isChestSquare(char sq)
+bool isChestSquare(char sqr)
 {
-    return 'a' <= sq && sq <= 'z' || 'A' <= sq && sq <= 'Z';
+    return ('a' <= sqr && sqr <= 'z') || ('A' <= sqr && sqr <= 'Z');
 }
 
-bool isBlankSquare(char sq)
+bool isBlankSquare(char sqr)
 {
-    return sq == BLANK_SQUARE || sq == TARGET_BLANK_SQUARE;
+    return sqr == BLANK_SQUARE || sqr == TARGET_BLANK_SQUARE;
 }
 
-bool isPathSquare(char sq)
+bool isPathSquare(char sqr)
 {
-    return isBlankSquare(sq) || isPlayerSquare(sq);
+    return isBlankSquare(sqr) || isPlayerSquare(sqr);
+}
+
+/*
+Checks if player can push chest from square sqr or if player
+can push chest onto square sqr.
+*/
+bool isLegalSquare(char sqr)
+{
+    return isBlankSquare(sqr) || isPlayerSquare(sqr);
 }
 
 int getChestNum(char chestName)
@@ -620,9 +629,14 @@ Position *getTargetChestPosition(Game *game, PushCommand *pushComm)
 
 bool isPositionInRange(Board *board, Position *pos)
 {
-    bool isRowInRange = 0 <= pos->row && pos->row < board->size;
-    bool isColInRange = 0 <= pos->col && pos->col < board->rows[pos->row]->size;
-    return isRowInRange && isColInRange;
+    if (pos->row < 0 || pos->row >= board->size)
+    {
+        return false;
+    }
+    else
+    {
+        return 0 <= pos->col && pos->col < board->rows[pos->row]->size;
+    }
 }
 
 void markSquareVisited(char *sq)
@@ -689,6 +703,11 @@ void processPosition(Board *board, Position *pos, PositionQueue *queue)
             markSquareVisited(posSquare);
             pushBack(queue, pos);
         }
+        else
+        {
+            free(pos);
+        }
+        
     }
     else
     {
@@ -736,6 +755,7 @@ bool isPath(Game *game, Position *targetPlayerPos)
         free(currPos);
     }
 
+    free(targetPlayerPos);
     clearPositionQueue(&queue);
     unmarkVisitedSquares(game->board);
 
@@ -745,21 +765,21 @@ bool isPath(Game *game, Position *targetPlayerPos)
 // TODO comment
 bool isChestPushPossible(Game *game, PushCommand *pushComm)
 {
-    bool isInRange = false;
-    bool isLegalSquare = false;
+    bool isPosInRange = false;
+    bool isLegalSqr = false;
     Position *targetChestPos = getTargetChestPosition(game, pushComm);
 
     if (isPositionInRange(game->board, targetChestPos))
     {
-        isInRange = true;
+        isPosInRange = true;
         Row *targetChestRow = game->board->rows[targetChestPos->row];
-        char targetChestSquare = targetChestRow->squares[targetChestPos->col];
-        isLegalSquare = isBlankSquare(targetChestSquare);
+        char targetChestSqr = targetChestRow->squares[targetChestPos->col];
+        isLegalSqr = isLegalSquare(targetChestSqr);
     }
 
     free(targetChestPos);
 
-    return isInRange && isLegalSquare;
+    return isPosInRange && isLegalSqr;
 }
 
 // TODO comment
@@ -774,8 +794,16 @@ bool isApproachPossible(Game *game, PushCommand *pushComm)
     else
     {
         Row *targetPlayerRow = game->board->rows[targetPlayerPos->row];
-        char targetPlayerSquare = targetPlayerRow->squares[targetPlayerPos->col];
-        return isBlankSquare(targetPlayerSquare) && isPath(game, targetPlayerPos);
+        char targetPlayerSqr = targetPlayerRow->squares[targetPlayerPos->col];
+        if (!isLegalSquare(targetPlayerSqr))
+        {
+            free(targetPlayerPos);
+            return false;
+        }
+        else
+        {
+            return isPath(game, targetPlayerPos);
+        }
     }
 }
 
@@ -799,9 +827,12 @@ void readAndExecuteCommands(Game *game)
     int c = getchar();
     while (c != '.')
     {
-        if (c == UNDO_COMMAND && !isMoveStackEmpty(&stack))
+        if (c == UNDO_COMMAND)
         {
-            executeUndoCommand(game, &stack);
+            if (!isMoveStackEmpty(&stack))
+            {
+                executeUndoCommand(game, &stack);
+            }
         }
         else
         {
@@ -814,6 +845,7 @@ void readAndExecuteCommands(Game *game)
             }
         }
         printBoard(game->board);
+        getchar();
         c = getchar();
     }
 
@@ -825,6 +857,7 @@ int main()
     Board board;
     initBoard(&board);
     readInitialBoardState(&board);
+    printBoard(&board);
 
     Position playerPos;
     findPlayerPosition(&board, &playerPos);
