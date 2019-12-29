@@ -27,12 +27,14 @@
 #define LEFT '4'
 #define RIGHT '6'
 
-typedef struct
+struct Row
 {
     char *squares;
     int size;
     int capacity;
-} Row;
+};
+
+typedef struct Row Row;
 
 void initRow(Row *row)
 {
@@ -71,7 +73,7 @@ void printRow(Row *row)
 {
     for (int i = 0; i < row->size; i++)
     {
-        printf("%c", row[i]);
+        printf("%c", row->squares[i]);
     }
 }
 
@@ -80,12 +82,14 @@ void disposeRow(Row *row)
     free(row->squares);
 }
 
-typedef struct
+struct Board
 {
     Row **rows;
     int size;
     int capacity;
-} Board;
+};
+
+typedef struct Board Board;
 
 void initBoard(Board *board)
 {
@@ -123,19 +127,21 @@ void printBoard(Board *board)
 
 void disposeBoard(Board *board)
 {
-    for (int i = 0; i < b->size; i++)
+    for (int i = 0; i < board->size; i++)
     {
         disposeRow(board->rows[i]);
         free(board->rows[i]);
     }
-    free(rows);
+    free(board->rows);
 }
 
-typedef struct
+struct Position
 {
     int row;
     int col;
-} Position;
+};
+
+typedef struct Position Position;
 
 Position *getNewPosition(int row, int col)
 {
@@ -162,49 +168,54 @@ bool arePositionsEqual(Position *pos1, Position *pos2)
     }
 }
 
-typedef struct
+struct PushCommand
 {
     int chestNum;
     char direction;
-} PushCommand;
+};
 
-typedef struct
+typedef struct PushCommand PushCommand;
+
+struct Game
 {
     Board *board;
     Position *playerPos;
     Position *chestsPos[NUM_OF_CHESTS];
-} Game;
+};
+
+typedef struct Game Game;
 
 // comment on this
-typedef struct
+struct Move
 {
     int chestNum;
-    Position *prevChestPos;
     Position *prevPlayerPos;
-} Move;
+};
 
-Move *getNewMove(int chestNum, Position *prevChestPos, Position *prevPlayerPos)
+typedef struct Move Move;
+
+Move *getNewMove(int chestNum, Position *prevPlayerPos)
 {
     Move *newMove = malloc(sizeof(Move));
     assert(newMove != NULL);
     newMove->chestNum = chestNum;
-    newMove->prevChestPos = prevChestPos;
     newMove->prevPlayerPos = prevPlayerPos;
     return newMove;
 }
 
 void disposeMove(Move *move)
 {
-    free(move->prevChestPos);
     free(move->prevPlayerPos);
     free(move);
 }
 
-typedef struct
+struct MoveNode
 {
     Move *move;
-    MoveNode *next;
-} MoveNode;
+    struct MoveNode *next;
+};
+
+typedef struct MoveNode MoveNode;
 
 MoveNode *getNewMoveNode(Move *move, MoveNode *next)
 {
@@ -220,10 +231,12 @@ void disposeMoveNode(MoveNode *node)
     free(node);
 }
 
-typedef struct
+struct MoveStack
 {
     MoveNode *top;
-} MoveStack;
+};
+
+typedef struct MoveStack MoveStack;
 
 void initMoveStack(MoveStack *stack)
 {
@@ -257,18 +270,20 @@ void push(MoveStack *stack, Move *move)
 
 void clearMoveStack(MoveStack *stack)
 {
-    while (!isPositionStackEmpty(stack))
+    while (!isMoveStackEmpty(stack))
     {
-        MoveNode *node = pop(stack);
-        disposeMoveNode(node);
+        Move *move = pop(stack);
+        disposeMove(move);
     }
 }
 
-typedef struct
+struct PositionNode
 {
     Position *pos;
-    PositionNode *next;
-} PositionNode;
+    struct PositionNode *next;
+};
+
+typedef struct PositionNode PositionNode;
 
 PositionNode *getNewPositionNode(Position *pos, PositionNode *next)
 {
@@ -281,15 +296,17 @@ PositionNode *getNewPositionNode(Position *pos, PositionNode *next)
 
 void disposePositionNode(PositionNode *node)
 {
-    disposePosition(node->pos);
+    free(node->pos);
     free(node);
 }
 
-typedef struct
+struct PositionQueue
 {
     PositionNode *front;
     PositionNode *back;
-} PositionQueue;
+};
+
+typedef struct PositionQueue PositionQueue;
 
 void initPositionQueue(PositionQueue *queue)
 {
@@ -338,8 +355,8 @@ void clearPositionQueue(PositionQueue *queue)
 {
     while (!isPositionQueueEmpty(queue))
     {
-        PositionNode *node = popFront(queue);
-        disposePositionNode(node);
+        Position *pos = popFront(queue);
+        free(pos);
     }
 }
 
@@ -418,7 +435,7 @@ void initChestsPositions(Position *chestsPos[])
 {
     for (int i = 0; i < NUM_OF_CHESTS; i++)
     {
-        chestsPositions[i] = MISSING_POSITION;
+        chestsPos[i] = NULL;
     }
 }
 
@@ -426,9 +443,9 @@ void disposeChestsPositions(Position *chestsPos[])
 {
     for (int i = 0; i < NUM_OF_CHESTS; i++)
     {
-        if (chestsPositions[i] != MISSING_POSITION)
+        if (chestsPos[i] != NULL)
         {
-            free(chestsPositions[i]);
+            free(chestsPos[i]);
         }
     }
 }
@@ -437,7 +454,7 @@ void loadLineToRow(Row *row, int c)
 {
     do
     {
-        addSquareToRow(row, c);
+        addToRow(row, c);
         c = getchar();
     } while (c != '\n');
 }
@@ -449,7 +466,7 @@ void readInitialBoardState(Board *board)
     {
         Row *row = getNewRow();
         loadLineToRow(row, c);
-        addRowToBoard(board, row);
+        addToBoard(board, row);
         c = getchar();
     }
 }
@@ -464,27 +481,26 @@ char getChestName(int chestNum, char square)
 
 void executeUndoCommand(Game *game, MoveStack *stack)
 {
-    Position *playerPos = game->playerPos;
-    Position *chestPos = game->chestsPos[pushComm->chestNum];
-    Row *playerRow = game->board->rows[playerPos->row];
-    Row *chestRow = game->board->rows[chestPos->row];
-
-    char *playerSquare = &(playerRow->squares[playerPos->col]);
-    if (*playerSquare == PLAYER_SQUARE)
-        *playerSquare = getChestName(chestNum, PLAYER_SQUARE);
-    else // *playerSquare == TARGET_PLAYER_SQUARE
-        *playerSquare = getChestName(chestNum, TARGET_PLAYER_SQUARE);
-
-    char *chestSquare = &(chestRow->squares[chestPos->col]);
-    if (isTargetChestSquare(*chestSquare))
-        *chestSquare = TARGET_BLANK_SQUARE;
-    else
-        *chestSquare = BLANK_SQUARE;
-
     Move *pastMove = pop(stack);
+    int chestNum = pastMove->chestNum;
+    Position *currPlayerPos = game->playerPos;
+    Row *currPlayerRow = game->board->rows[currPlayerPos->row];
+    Position *currChestPos = game->chestsPos[chestNum];
+    Row *currChestRow = game->board->rows[currChestPos->row];
     Position *pastPlayerPos = pastMove->prevPlayerPos;
-    Position *pastChestPos = pastMove->prevChestPos;
     Row *pastPlayerRow = game->board->rows[pastPlayerPos->row];
+
+    char *currChestSquare = &(currChestRow->squares[currChestPos->col]);
+    if (isTargetChestSquare(*currChestSquare))
+        *currChestSquare = TARGET_BLANK_SQUARE;
+    else
+        *currChestSquare = BLANK_SQUARE;
+
+    char *currPlayerSquare = &(currPlayerRow->squares[currPlayerPos->col]);
+    if (*currPlayerSquare == PLAYER_SQUARE)
+        *currPlayerSquare = getChestName(chestNum, PLAYER_SQUARE);
+    else // *currPlayerSquare == TARGET_PLAYER_SQUARE
+        *currPlayerSquare = getChestName(chestNum, TARGET_PLAYER_SQUARE);
 
     char *pastPlayerSquare = &(pastPlayerRow->squares[pastPlayerPos->col]);
     if (*pastPlayerSquare == BLANK_SQUARE)
@@ -492,11 +508,11 @@ void executeUndoCommand(Game *game, MoveStack *stack)
     else // *pastPlayerSquare == TARGET_BLANK_SQUARE
         *pastPlayerSquare = TARGET_PLAYER_SQUARE;
 
-    playerPos->row = pastPlayerPos->row;
-    playerPos->col = pastPlayerPos->col;
+    currChestPos->row = currPlayerPos->row;
+    currChestPos->col = currPlayerPos->col;
 
-    chestPos->row = pastChestPos->row;
-    chestPos->col = pastChestPos->col;
+    currPlayerPos->row = pastPlayerPos->row;
+    currPlayerPos->col = pastPlayerPos->col;
 
     disposeMove(pastMove);
 }
@@ -530,8 +546,7 @@ void executePushCommand(Game *game, PushCommand *pushComm, MoveStack *stack)
     Row *chestRow = game->board->rows[chestPos->row];
 
     Position *copiedPlayerPos = getNewPosition(playerPos->row, playerPos->col);
-    Position *copiedChestPos = getNewPosition(chestPos->row, chestPos->col);
-    Move *pushMove = getNewMove(chestNum, copiedChestPos, copiedPlayerPos);
+    Move *pushMove = getNewMove(chestNum, copiedPlayerPos);
     push(stack, pushMove);
 
     char *playerSquare = &(playerRow->squares[playerPos->col]);
@@ -561,7 +576,8 @@ void executePushCommand(Game *game, PushCommand *pushComm, MoveStack *stack)
         *pushedChestSquare = getChestName(chestNum, TARGET_BLANK_SQUARE);
 }
 
-Position *getTargetPosition(Game *game, PushCommand *pushComm)
+// returns position on which player must stand to execute push
+Position *getTargetPlayerPosition(Game *game, PushCommand *pushComm)
 {
     char pushDirection = pushComm->direction;
     Position *chestToPushPos = game->chestsPos[pushComm->chestNum];
@@ -574,11 +590,39 @@ Position *getTargetPosition(Game *game, PushCommand *pushComm)
 
     int targetCol = chestToPushPos->col;
     if (pushDirection == LEFT)
+        targetCol++;
+    else if (pushDirection == RIGHT)
+        targetCol--;
+
+    return getNewPosition(targetRow, targetCol);
+}
+
+// returns position to which chest will be pushed if push is possible
+Position *getTargetChestPosition(Game *game, PushCommand *pushComm)
+{
+    char pushDirection = pushComm->direction;
+    Position *chestToPushPos = game->chestsPos[pushComm->chestNum];
+
+    int targetRow = chestToPushPos->row;
+    if (pushDirection == DOWN)
+        targetRow++;
+    else if (pushDirection == UP)
+        targetRow--;
+
+    int targetCol = chestToPushPos->col;
+    if (pushDirection == LEFT)
         targetCol--;
     else if (pushDirection == RIGHT)
         targetCol++;
 
     return getNewPosition(targetRow, targetCol);
+}
+
+bool isPositionInRange(Board *board, Position *pos)
+{
+    bool isRowInRange = 0 <= pos->row && pos->row < board->size;
+    bool isColInRange = 0 <= pos->col && pos->col < board->rows[pos->row]->size;
+    return isRowInRange && isColInRange;
 }
 
 void markSquareVisited(char *sq)
@@ -601,9 +645,42 @@ void markSquareVisited(char *sq)
     }
 }
 
+void unmarkSquareIfVisited(char *sq)
+{
+    if (*sq == VISITED_BLANK_SQUARE)
+    {
+        *sq = BLANK_SQUARE;
+    }
+    else if (*sq == VISITED_TARGET_BLANK_SQUARE)
+    {
+        *sq = TARGET_BLANK_SQUARE;
+    }
+    else if (*sq == VISITED_PLAYER_SQUARE)
+    {
+        *sq = PLAYER_SQUARE;
+    }
+    else if (*sq == VISITED_TARGET_PLAYER_SQUARE)
+    {
+        *sq = TARGET_PLAYER_SQUARE;
+    }
+}
+
+void unmarkVisitedSquares(Board *board)
+{
+    for (int i = 0; i < board->size; i++)
+    {
+        for (int j = 0; j < board->rows[i]->size; j++)
+        {
+            char *sq = &(board->rows[i]->squares[j]);
+            unmarkSquareIfVisited(sq);
+        }
+    }
+}
+
+// TODO comment
 void processPosition(Board *board, Position *pos, PositionQueue *queue)
 {
-    if (isPositionInRange(pos))
+    if (isPositionInRange(board, pos))
     {
         Row *posRow = board->rows[pos->row];
         char *posSquare = &(posRow->squares[pos->col]);
@@ -645,31 +722,51 @@ bool isPath(Game *game, Position *targetPlayerPos)
     bool isPathFound = false;
     processPosition(game->board, copiedPlayerPos, &queue);
 
-    while (!isPositionQueueEmpty(queue) && !isPathFound)
+    while (!isPositionQueueEmpty(&queue) && !isPathFound)
     {
-        Position *pos = popFront(queue);
-        if (arePositionsEqual(pos, targetPlayerPos))
+        Position *currPos = popFront(&queue);
+        if (arePositionsEqual(currPos, targetPlayerPos))
         {
             isPathFound = true;
         }
         else
         {
-            addNeighbors(game->board, pos, &queue);
+            addNeighbors(game->board, currPos, &queue);
         }
-        free(pos);
+        free(currPos);
     }
 
     clearPositionQueue(&queue);
-
-    // unmark
+    unmarkVisitedSquares(game->board);
 
     return isPathFound;
 }
 
+// TODO comment
+bool isChestPushPossible(Game *game, PushCommand *pushComm)
+{
+    bool isInRange = false;
+    bool isLegalSquare = false;
+    Position *targetChestPos = getTargetChestPosition(game, pushComm);
+
+    if (isPositionInRange(game->board, targetChestPos))
+    {
+        isInRange = true;
+        Row *targetChestRow = game->board->rows[targetChestPos->row];
+        char targetChestSquare = targetChestRow->squares[targetChestPos->col];
+        isLegalSquare = isBlankSquare(targetChestSquare);
+    }
+
+    free(targetChestPos);
+
+    return isInRange && isLegalSquare;
+}
+
+// TODO comment
 bool isApproachPossible(Game *game, PushCommand *pushComm)
 {
-    Position *targetPlayerPos = getTargetPosition(game, pushComm);
-    if (!isPositionInRange(game, targetPlayerPos))
+    Position *targetPlayerPos = getTargetPlayerPosition(game, pushComm);
+    if (!isPositionInRange(game->board, targetPlayerPos))
     {
         free(targetPlayerPos);
         return false;
@@ -677,7 +774,7 @@ bool isApproachPossible(Game *game, PushCommand *pushComm)
     else
     {
         Row *targetPlayerRow = game->board->rows[targetPlayerPos->row];
-        char targetPlayerSquare = targetRow->squares[targetPlayerPos->col];
+        char targetPlayerSquare = targetPlayerRow->squares[targetPlayerPos->col];
         return isBlankSquare(targetPlayerSquare) && isPath(game, targetPlayerPos);
     }
 }
@@ -685,12 +782,16 @@ bool isApproachPossible(Game *game, PushCommand *pushComm)
 bool isPushCommandPossible(Game *game, PushCommand *pushComm)
 {
     if (!isChestPushPossible(game, pushComm))
+    {
         return false;
+    }
     else
+    {
         return isApproachPossible(game, pushComm);
+    }
 }
 
-void executeCommands(Game *game)
+void readAndExecuteCommands(Game *game)
 {
     MoveStack stack;
     initMoveStack(&stack);
@@ -698,12 +799,9 @@ void executeCommands(Game *game)
     int c = getchar();
     while (c != '.')
     {
-        if (c == UNDO_COMMAND)
+        if (c == UNDO_COMMAND && !isMoveStackEmpty(&stack))
         {
-            if (!isMoveStackEmpty(&stack))
-            {
-                executeUndoCommand(board, chestsPos, playerPos);
-            }
+            executeUndoCommand(game, &stack);
         }
         else
         {
@@ -731,19 +829,17 @@ int main()
     Position playerPos;
     findPlayerPosition(&board, &playerPos);
 
-    Position *chestsPos[NUM_OF_CHESTS];
-    initChestsPositions(chestsPos);
-    findChestsPositions(&board, chestsPos);
-
     Game game;
     game.board = &board;
     game.playerPos = &playerPos;
-    game.chestsPos = chestsPos;
 
-    executeCommands(&game);
+    initChestsPositions(game.chestsPos);
+    findChestsPositions(&board, game.chestsPos);
+
+    readAndExecuteCommands(&game);
 
     disposeBoard(&board);
-    disposeChestsPositions(chestsPos);
+    disposeChestsPositions(game.chestsPos);
 
     return 0;
 }
