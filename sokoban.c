@@ -245,6 +245,32 @@ Position *getChestPosition(Game *game, int chestNum) {
     return game->chestsPos[chestNum];
 }
 
+void findChestsPositions(Board *board, Position *chestsPos[]) {
+    for (int i = 0; i < board->size; i++) {
+        for (int j = 0; j < board->rows[i]->size; j++) {
+            char square = board->rows[i]->squares[j];
+            if (isChestSquare(square)) {
+                int chestNum = getChestNum(square);
+                chestsPos[chestNum] = getNewPosition(i, j);
+            }
+        }
+    }
+}
+
+void findPlayerPosition(Board *board, Position *playerPos) {
+    bool isFound = false;
+    for (int i = 0; i < board->size && !isFound; i++) {
+        for (int j = 0; j < board->rows[i]->size && !isFound; j++) {
+            char square = board->rows[i]->squares[j];
+            if (isPlayerSquare(square)) {
+                isFound = true;
+                playerPos->row = i;
+                playerPos->col = j;
+            }
+        }
+    }
+}
+
 struct Move {
     int chestNum;
     Position *prevPlayerPos;
@@ -685,32 +711,6 @@ void readAndExecuteCommands(Game *game) {
     }
 
     clearMoveStack(&stack);
-}
-
-void findChestsPositions(Board *board, Position *chestsPos[]) {
-    for (int i = 0; i < board->size; i++) {
-        for (int j = 0; j < board->rows[i]->size; j++) {
-            char square = board->rows[i]->squares[j];
-            if (isChestSquare(square)) {
-                int chestNum = getChestNum(square);
-                chestsPos[chestNum] = getNewPosition(i, j);
-            }
-        }
-    }
-}
-
-void findPlayerPosition(Board *board, Position *playerPos) {
-    bool isFound = false;
-    for (int i = 0; i < board->size && !isFound; i++) {
-        for (int j = 0; j < board->rows[i]->size && !isFound; j++) {
-            char square = board->rows[i]->squares[j];
-            if (isPlayerSquare(square)) {
-                isFound = true;
-                playerPos->row = i;
-                playerPos->col = j;
-            }
-        }
-    }
 }
 
 int main() {
