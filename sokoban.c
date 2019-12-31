@@ -13,13 +13,12 @@
 
 #define BLANK_SQUARE '-'
 #define VISITED_BLANK_SQUARE '$'
-#define TARGET_BLANK_SQUARE '+'
-#define VISITED_TARGET_BLANK_SQUARE '&'
-#define WALL_SQUARE '#'
+#define FINAL_BLANK_SQUARE '+'
+#define VISITED_FINAL_BLANK_SQUARE '&'
 #define PLAYER_SQUARE '@'
 #define VISITED_PLAYER_SQUARE '!'
-#define TARGET_PLAYER_SQUARE '*'
-#define VISITED_TARGET_PLAYER_SQUARE '^'
+#define FINAL_PLAYER_SQUARE '*'
+#define VISITED_FINAL_PLAYER_SQUARE '^'
 
 #define UNDO_COMMAND '0'
 
@@ -30,10 +29,10 @@
 #define RIGHT '6'
 
 bool isPlayerSquare(char square) {
-    return square == PLAYER_SQUARE || square == TARGET_PLAYER_SQUARE;
+    return square == PLAYER_SQUARE || square == FINAL_PLAYER_SQUARE;
 }
 
-bool isTargetChestSquare(char square) {
+bool isFinalChestSquare(char square) {
     return 'A' <= square && square <= 'Z';
 }
 
@@ -42,17 +41,16 @@ bool isChestSquare(char square) {
 }
 
 bool isBlankSquare(char square) {
-    return square == BLANK_SQUARE || square == TARGET_BLANK_SQUARE;
+    return square == BLANK_SQUARE || square == FINAL_BLANK_SQUARE;
 }
 
-// Checks if square can form a path to position where player can push chest and
-// if chest can be pushed onto square.
+// Checks if square can form a path to position where player can push chest and if chest can be pushed onto square.
 bool isLegalSquare(char square) {
     return isBlankSquare(square) || isPlayerSquare(square);
 }
 
 int getChestNum(char chestName) {
-    if (isTargetChestSquare(chestName)) {
+    if (isFinalChestSquare(chestName)) {
         return chestName - 'A';
     } else {
         return chestName - 'a';
@@ -236,39 +234,44 @@ void setSquare(Game *game, Position *pos, char newSquare) {
     game->board->rows[pos->row]->squares[pos->col] = newSquare;
 }
 
-void disposeGame(Game *game) {
-    disposeBoard(game->board);
-    disposeChestsPositions(game->chestsPos);
-}
-
 Position *getChestPosition(Game *game, int chestNum) {
     return game->chestsPos[chestNum];
 }
 
-void findChestsPositions(Board *board, Position *chestsPos[]) {
-    for (int i = 0; i < board->size; i++) {
-        for (int j = 0; j < board->rows[i]->size; j++) {
-            char square = board->rows[i]->squares[j];
+void findChestsPositions(Game *game) {
+    for (int i = 0; i < game->board->size; i++) {
+        for (int j = 0; j < game->board->rows[i]->size; j++) {
+            Position *pos = getNewPosition(i, j);
+            char square = getSquare(game, pos);
             if (isChestSquare(square)) {
                 int chestNum = getChestNum(square);
-                chestsPos[chestNum] = getNewPosition(i, j);
+                game->chestsPos[chestNum] = pos;
+            } else {
+                free(pos);
             }
         }
     }
 }
 
-void findPlayerPosition(Board *board, Position *playerPos) {
+void findPlayerPosition(Game *game, Position *playerPos) {
     bool isFound = false;
-    for (int i = 0; i < board->size && !isFound; i++) {
-        for (int j = 0; j < board->rows[i]->size && !isFound; j++) {
-            char square = board->rows[i]->squares[j];
-            if (isPlayerSquare(square)) {
+    for (int i = 0; i < game->board->size && !isFound; i++) {
+        for (int j = 0; j < game->board->rows[i]->size && !isFound; j++) {
+            Position pos;
+            pos.row = i;
+            pos.col = j;
+            if (isPlayerSquare(getSquare(game, &pos))) {
                 isFound = true;
                 playerPos->row = i;
                 playerPos->col = j;
             }
         }
     }
+}
+
+void disposeGame(Game *game) {
+    disposeBoard(game->board);
+    disposeChestsPositions(game->chestsPos);
 }
 
 struct Move {
@@ -417,35 +420,43 @@ void clearPositionQueue(PositionQueue *queue) {
     }
 }
 
-void executeUndoCommand(Game *game, MoveStack *stack) {
-    Move *pastMove = pop(stack);
-
-    Position *currChestPos = getChestPosition(game, pastMove->chestNum);
-    if (isTargetChestSquare(getSquare(game, currChestPos))) {
-        setSquare(game, currChestPos, TARGET_BLANK_SQUARE);
+void setCurrentChestSquareToBlankSquare(Game *game, Position *currChestPos) {
+    if (isFinalChestSquare(getSquare(game, currChestPos))) {
+        setSquare(game, currChestPos, FINAL_BLANK_SQUARE);
     } else {
-        // getSquare(game, currChestPos) is non-target chest square.
+        // getSquare(game, currChestPos) is a non-final chest square.
         setSquare(game, currChestPos, BLANK_SQUARE);
     }
+}
 
-    Position *currPlayerPos = game->playerPos;
+void setCurrentPlayerSquareToChestSquare(Game *game, Position *currPlayerPos, int chestNum) {
     if (getSquare(game, currPlayerPos) == PLAYER_SQUARE) {
-        setSquare(game, currPlayerPos,
-                  getChestName(pastMove->chestNum, PLAYER_SQUARE));
+        setSquare(game, currPlayerPos, getChestName(chestNum, PLAYER_SQUARE));
     } else {
-        // getSquare(game, currPlayerPos) is equal to TARGET_PLAYER_SQUARE.
-        setSquare(game, currPlayerPos,
-                  getChestName(pastMove->chestNum, TARGET_PLAYER_SQUARE));
+        // getSquare(game, currPlayerPos) is equal to FINAL_PLAYER_SQUARE.
+        setSquare(game, currPlayerPos, getChestName(chestNum, FINAL_PLAYER_SQUARE));
     }
+}
 
-    Position *pastPlayerPos = pastMove->prevPlayerPos;
+void setCurrentBlankSquareToPlayerSquare(Game *game, Position *pastPlayerPos) {
     if (getSquare(game, pastPlayerPos) == BLANK_SQUARE) {
         setSquare(game, pastPlayerPos, PLAYER_SQUARE);
     } else {
-        // getSquare(game, pastPlayerPos) is equal to TARGET_BLANK_SQUARE.
-        setSquare(game, pastPlayerPos, TARGET_PLAYER_SQUARE);
+        // getSquare(game, pastPlayerPos) is equal to FINAL_BLANK_SQUARE.
+        setSquare(game, pastPlayerPos, FINAL_PLAYER_SQUARE);
     }
+}
 
+void executeUndoCommand(Game *game, MoveStack *stack) {
+    Move *pastMove = pop(stack);
+    Position *currChestPos = getChestPosition(game, pastMove->chestNum);
+    Position *currPlayerPos = game->playerPos;
+    Position *pastPlayerPos = pastMove->prevPlayerPos;
+    
+    setCurrentChestSquareToBlankSquare(game, currChestPos);
+    setCurrentPlayerSquareToChestSquare(game, currPlayerPos, pastMove->chestNum);
+    setCurrentBlankSquareToPlayerSquare(game, pastPlayerPos);
+    
     currChestPos->row = currPlayerPos->row;
     currChestPos->col = currPlayerPos->col;
 
@@ -456,73 +467,72 @@ void executeUndoCommand(Game *game, MoveStack *stack) {
 }
 
 int getPushedChestRowNumber(int row, char pushDirection) {
-    if (pushDirection == DOWN)
+    if (pushDirection == DOWN) {
         return row + 1;
-    else if (pushDirection == UP)
+    } else if (pushDirection == UP) {
         return row - 1;
-    else
+    } else {
         return row;
+    }
 }
 
 int getPushedChestColNumber(int col, char pushDirection) {
-    if (pushDirection == LEFT)
+    if (pushDirection == LEFT) {
         return col - 1;
-    else if (pushDirection == RIGHT)
+    } else if (pushDirection == RIGHT) {
         return col + 1;
-    else
+    } else {
         return col;
-}
-
-void setPlayerSquareToBlankSquare(Game *game) {
-    if (getSquare(game, game->playerPos) == PLAYER_SQUARE) {
-        setSquare(game, game->playerPos, BLANK_SQUARE);
-    } else {
-        // getSquare(game, game->playerPos) is equal to TARGET_PLAYER_SQUARE.
-        setSquare(game, game->playerPos, TARGET_BLANK_SQUARE);
     }
 }
 
-void setChestSquareToPlayerSquare(Game *game, Position *chestPos) {
-    if (isTargetChestSquare(getSquare(game, chestPos))) {
-        setSquare(game, chestPos, TARGET_PLAYER_SQUARE);
+void setCurrentPlayerSquareToBlankSquare(Game *game, Position *currPlayerPos) {
+    if (getSquare(game, currPlayerPos) == PLAYER_SQUARE) {
+        setSquare(game, currPlayerPos, BLANK_SQUARE);
     } else {
-        // getSquare(game, chestPos) is a non-target chest square.
-        setSquare(game, chestPos, PLAYER_SQUARE);
+        // getSquare(game, currPlayerPos) is equal to FINAL_PLAYER_SQUARE.
+        setSquare(game, currPlayerPos, FINAL_BLANK_SQUARE);
     }
 }
 
-void setBlankSquareToChestSquare(Game *game, Position *chestPos, int chestNum) {
-    if (getSquare(game, chestPos) == BLANK_SQUARE) {
-        setSquare(game, chestPos, getChestName(chestNum, BLANK_SQUARE));
+void setCurrentChestSquareToPlayerSquare(Game *game, Position *currChestPos) {
+    if (isFinalChestSquare(getSquare(game, currChestPos))) {
+        setSquare(game, currChestPos, FINAL_PLAYER_SQUARE);
     } else {
-        // getSquare(game, chestPos) is equal to TARGET_BLANK_SQUARE
-        setSquare(game, chestPos, getChestName(chestNum, TARGET_BLANK_SQUARE));
+        // getSquare(game, currChestPos) is a non-final chest square.
+        setSquare(game, currChestPos, PLAYER_SQUARE);
+    }
+}
+
+void setCurrentBlankSquareToChestSquare(Game *game, Position *targetChestPos, int chestNum) {
+    if (getSquare(game, targetChestPos) == BLANK_SQUARE) {
+        setSquare(game, targetChestPos, getChestName(chestNum, BLANK_SQUARE));
+    } else {
+        // getSquare(game, targetChestPos) is equal to FINAL_BLANK_SQUARE.
+        setSquare(game, targetChestPos, getChestName(chestNum, FINAL_BLANK_SQUARE));
     }
 }
 
 void executePushCommand(Game *game, PushCommand *pushComm, MoveStack *stack) {
-    Position *chestPos = getChestPosition(game, pushComm->chestNum);
+    Position *currPlayerPos = game->playerPos;
+    Position *currChestPos = getChestPosition(game, pushComm->chestNum);
 
-    setPlayerSquareToBlankSquare(game);
-    setChestSquareToPlayerSquare(game, chestPos);
+    setCurrentPlayerSquareToBlankSquare(game, currPlayerPos);
+    setCurrentChestSquareToPlayerSquare(game, currChestPos);
 
-    push(stack,
-         getNewMove(pushComm->chestNum, getNewPosition(game->playerPos->row,
-                                                       game->playerPos->col)));
+    push(stack, getNewMove(pushComm->chestNum, getNewPosition(currPlayerPos->row, currPlayerPos->col)));
 
-    game->playerPos->row = chestPos->row;
-    game->playerPos->col = chestPos->col;
+    currPlayerPos->row = currChestPos->row;
+    currPlayerPos->col = currChestPos->col;
 
-    chestPos->row = getPushedChestRowNumber(chestPos->row, pushComm->direction);
-    chestPos->col = getPushedChestColNumber(chestPos->col, pushComm->direction);
+    currChestPos->row = getPushedChestRowNumber(currChestPos->row, pushComm->direction);
+    currChestPos->col = getPushedChestColNumber(currChestPos->col, pushComm->direction);
 
-    setBlankSquareToChestSquare(game, chestPos, pushComm->chestNum);
+    setCurrentBlankSquareToChestSquare(game, currChestPos, pushComm->chestNum);
 }
 
-// TargetPlayerPosition is the position where player have to be to execute
-// push command.
-void initTargetPlayerPosition(Game *game, PushCommand *pushComm,
-                              Position *targetPlayerPos) {
+// TargetPlayerPosition is the position where player have to go to execute push command.
+void initTargetPlayerPosition(Game *game, PushCommand *pushComm, Position *targetPlayerPos) {
     Position *chestToPushPos = getChestPosition(game, pushComm->chestNum);
 
     int targetRow = chestToPushPos->row;
@@ -543,10 +553,8 @@ void initTargetPlayerPosition(Game *game, PushCommand *pushComm,
     targetPlayerPos->col = targetCol;
 }
 
-// Computes and initializes coordinates of position where chest will be
-// pushed if move is possible.
-void initTargetChestPosition(Game *game, PushCommand *pushComm,
-                             Position *targetChestPos) {
+// Computes and initializes coordinates of position where chest will be pushed if move is possible.
+void initTargetChestPosition(Game *game, PushCommand *pushComm, Position *targetChestPos) {
     Position *chestToPushPos = getChestPosition(game, pushComm->chestNum);
 
     int targetRow = chestToPushPos->row;
@@ -568,34 +576,30 @@ void initTargetChestPosition(Game *game, PushCommand *pushComm,
 }
 
 bool isPositionInRange(Board *board, Position *pos) {
-    if (pos->row < 0 || pos->row >= board->size) {
-        return false;
-    } else {
-        return 0 <= pos->col && pos->col < board->rows[pos->row]->size;
-    }
+    return (0 <= pos->row && pos->row < board->size) && (0 <= pos->col && pos->col < board->rows[pos->row]->size);
 }
 
 void markSquareVisited(Game *game, Position *pos) {
     if (getSquare(game, pos) == BLANK_SQUARE) {
         setSquare(game, pos, VISITED_BLANK_SQUARE);
-    } else if (getSquare(game, pos) == TARGET_BLANK_SQUARE) {
-        setSquare(game, pos, VISITED_TARGET_BLANK_SQUARE);
+    } else if (getSquare(game, pos) == FINAL_BLANK_SQUARE) {
+        setSquare(game, pos, VISITED_FINAL_BLANK_SQUARE);
     } else if (getSquare(game, pos) == PLAYER_SQUARE) {
         setSquare(game, pos, VISITED_PLAYER_SQUARE);
-    } else if (getSquare(game, pos) == TARGET_PLAYER_SQUARE) {
-        setSquare(game, pos, VISITED_TARGET_PLAYER_SQUARE);
+    } else if (getSquare(game, pos) == FINAL_PLAYER_SQUARE) {
+        setSquare(game, pos, VISITED_FINAL_PLAYER_SQUARE);
     }
 }
 
 void unmarkSquareIfVisited(Game *game, Position *pos) {
     if (getSquare(game, pos) == VISITED_BLANK_SQUARE) {
         setSquare(game, pos, BLANK_SQUARE);
-    } else if (getSquare(game, pos) == VISITED_TARGET_BLANK_SQUARE) {
-        setSquare(game, pos, TARGET_BLANK_SQUARE);
+    } else if (getSquare(game, pos) == VISITED_FINAL_BLANK_SQUARE) {
+        setSquare(game, pos, FINAL_BLANK_SQUARE);
     } else if (getSquare(game, pos) == VISITED_PLAYER_SQUARE) {
         setSquare(game, pos, PLAYER_SQUARE);
-    } else if (getSquare(game, pos) == VISITED_TARGET_PLAYER_SQUARE) {
-        setSquare(game, pos, TARGET_PLAYER_SQUARE);
+    } else if (getSquare(game, pos) == VISITED_FINAL_PLAYER_SQUARE) {
+        setSquare(game, pos, FINAL_PLAYER_SQUARE);
     }
 }
 
@@ -610,8 +614,7 @@ void unmarkVisitedSquares(Game *game) {
     }
 }
 
-// Adds given position to queue if it is not visited yet and can form a valid
-// path.
+// Adds given position to queue if it is not visited yet and can form a valid path.
 void addPositionIfLegal(Game *game, Position *pos, PositionQueue *queue) {
     if (isPositionInRange(game->board, pos) && isLegalSquare(getSquare(game, pos))) {
         markSquareVisited(game, pos);
@@ -621,8 +624,7 @@ void addPositionIfLegal(Game *game, Position *pos, PositionQueue *queue) {
     }
 }
 
-// Adds all neighbor positions to queue which are not visited yet and can form a
-// valid path.
+// Adds all neighbor positions to queue which are not visited yet and can form a valid path.
 void addNeighborsIfLegal(Game *game, Position *pos, PositionQueue *queue) {
     Position *upperNeighbor = getNewPosition(pos->row - 1, pos->col);
     addPositionIfLegal(game, upperNeighbor, queue);
@@ -667,24 +669,19 @@ bool doesPathExist(Game *game, Position *targetPlayerPos) {
 bool isChestPushPossible(Game *game, PushCommand *pushComm) {
     Position targetChestPos;
     initTargetChestPosition(game, pushComm, &targetChestPos);
-
-    return isPositionInRange(game->board, &targetChestPos) &&
-           isLegalSquare(getSquare(game, &targetChestPos));
+    return isPositionInRange(game->board, &targetChestPos) && isLegalSquare(getSquare(game, &targetChestPos));
 }
 
 // Checks if player can go up to chest in order to push it.
 bool isApproachPossible(Game *game, PushCommand *pushComm) {
     Position targetPlayerPos;
     initTargetPlayerPosition(game, pushComm, &targetPlayerPos);
-
-    return isPositionInRange(game->board, &targetPlayerPos) &&
-           isLegalSquare(getSquare(game, &targetPlayerPos)) &&
+    return isPositionInRange(game->board, &targetPlayerPos) && isLegalSquare(getSquare(game, &targetPlayerPos)) &&
            doesPathExist(game, &targetPlayerPos);
 }
 
 bool isPushCommandPossible(Game *game, PushCommand *pushComm) {
-    return isChestPushPossible(game, pushComm) &&
-           isApproachPossible(game, pushComm);
+    return isChestPushPossible(game, pushComm) && isApproachPossible(game, pushComm);
 }
 
 void readAndExecuteCommands(Game *game) {
@@ -717,16 +714,18 @@ int main() {
     Board board;
     initBoard(&board);
     readInitialBoardState(&board);
-    printBoard(&board);
 
-    Position playerPos;
-    findPlayerPosition(&board, &playerPos);
+    printBoard(&board);
 
     Game game;
     game.board = &board;
-    game.playerPos = &playerPos;
+
     initChestsPositions(game.chestsPos);
-    findChestsPositions(&board, game.chestsPos);
+    findChestsPositions(&game);
+
+    Position playerPos;
+    findPlayerPosition(&game, &playerPos);
+    game.playerPos = &playerPos;
 
     readAndExecuteCommands(&game);
 
