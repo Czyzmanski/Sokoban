@@ -452,11 +452,11 @@ void executeUndoCommand(Game *game, MoveStack *stack) {
     Position *currChestPos = getChestPosition(game, pastMove->chestNum);
     Position *currPlayerPos = game->playerPos;
     Position *pastPlayerPos = pastMove->prevPlayerPos;
-    
+
     setCurrentChestSquareToBlankSquare(game, currChestPos);
     setCurrentPlayerSquareToChestSquare(game, currPlayerPos, pastMove->chestNum);
     setCurrentBlankSquareToPlayerSquare(game, pastPlayerPos);
-    
+
     currChestPos->row = currPlayerPos->row;
     currChestPos->col = currPlayerPos->col;
 
