@@ -1,11 +1,17 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.0)
 project(Sokoban C)
 
-set(CMAKE_C_STANDARD 11)
+if (NOT CMAKE_BUILD_TYPE)
+    message(STATUS "No build type selected, default to Release")
+    set(CMAKE_BUILD_TYPE "Release")
+endif ()
 
+set_property(GLOBAL PROPERTY RULE_MESSAGES OFF)
+set(CMAKE_VERBOSE_MAKEFILE ON)
+set(CMAKE_C_STANDARD 11)
 include_directories(src)
 
-add_executable(Sokoban
+set(SOURCE_FILES
         src/board.h
         src/command.h
         src/game.c
@@ -19,3 +25,5 @@ add_executable(Sokoban
         src/row.h
         src/sokoban_main.c
         src/squares.h)
+
+add_executable(sokoban ${SOURCE_FILES})
