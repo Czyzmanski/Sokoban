@@ -35,7 +35,7 @@ pushed onto is not empty, nothing happens
 
 `0` reverting last push
 
-`.` quit
+`.` quit game
 
 #### **Playing**
 In order to play the game, execute following commands:
